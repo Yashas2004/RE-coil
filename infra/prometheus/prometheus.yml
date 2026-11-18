@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  # Prometheus watching itself — proves the setup works.
+  # We'll add one job per service as we build them.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

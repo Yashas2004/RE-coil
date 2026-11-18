@@ -1,0 +1,129 @@
+# RE-coil — infrastructure layer (Phase 1)
+# Every service we write later joins this same network and talks to these by name
+# (e.g. "kafka:9092", "postgres:5432"). Docker's internal DNS makes that work.
+
+services:
+  # ---------- Event stream ----------
+  # Kafka in KRaft mode = no ZooKeeper. One node acts as both broker and controller.
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: recoil-kafka
+    ports:
+      - "29092:29092"          # for tools on your laptop (localhost:29092)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # ---------- Vector search ----------
+  # Stores item embeddings; answers "give me the 500 videos closest to this user vector".
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: recoil-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      retries: 10
+
+  # ---------- Fast state ----------
+  # Sessions ("what did this user just see?") and trending counters.
+  redis:
+    image: redis:7-alpine
+    container_name: recoil-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  # -----  # ---------- Model artifacts ----------
+  # S3-compatible object storage. The trainer uploads model files here,
+  # the model-server downloads them. (SeaweedFS replaces MinIO, whose images were pulled.)
+  s3:
+    image: chrislusf/seaweedfs:latest
+    container_name: recoil-s3
+    command: server -dir=/data -ip=s3 -ip.bind=0.0.0.0 -s3 -s3.port=8333
+    ports:
+      - "8333:8333"   # S3 API (what our code talks to)
+      - "8888:8888"   # filer web UI (browse stored files)
+    volumes:
+      - s3_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 5s
+      retries: 20
+      start_period: 20s
+
+  # ---------- Durable records ----------
+  # Videos, users, every interaction, every training run.
+  postgres:
+    image: postgres:16-alpine
+    container_name: recoil-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-recoil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-recoil}
+      POSTGRES_DB: ${POSTGRES_DB:-recoil}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-recoil}"]
+      interval: 5s
+      retries: 10
+
+  # ---------- Observability ----------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: recoil-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      retries: 10
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: recoil-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      retries: 10
+
+volumes:
+  qdrant_data:
+  s3_data:
+  pg_data:

@@ -29,6 +29,17 @@ services:
       timeout: 10s
       retries: 10
 
+  # Runs once, creates our topics, then exits.
+  kafka-init:
+    image: apache/kafka:3.8.0
+    container_name: recoil-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic interactions --partitions 3 --replication-factor 1"]
+    restart: "no"
+
   # ---------- Vector search ----------
   # Stores item embeddings; answers "give me the 500 videos closest to this user vector".
   qdrant:
@@ -140,6 +151,23 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 5s
+      retries: 10
+
+
+  user-event:
+    build: ./services/user-event
+    container_name: recoil-user-event
+    ports:
+      - "8002:8002"
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: interactions
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8002/health"]
       interval: 5s
       retries: 10
 

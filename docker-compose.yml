@@ -123,6 +123,27 @@ services:
       interval: 10s
       retries: 10
 
+
+  # ---------- Our services ----------
+  ingest:
+    build: ./services/ingest
+    container_name: recoil-ingest
+    ports:
+      - "8001:8001"
+    environment:
+      POSTGRES_DSN: postgresql://recoil:recoil@postgres:5432/recoil
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 5s
+      retries: 10
+
+
 volumes:
   qdrant_data:
   s3_data:

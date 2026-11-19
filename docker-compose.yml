@@ -225,6 +225,39 @@ services:
       retries: 10
 
 
+  feed-api:
+    build: ./services/feed-api
+    container_name: recoil-feed-api
+    ports:
+      - "8005:8005"
+    environment:
+      MODEL_SERVER_URL: http://model-server:8004
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      model-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8005/health"]
+      interval: 5s
+      retries: 10
+      
+  sim-engine:
+    build: ./services/sim-engine
+    container_name: recoil-sim-engine
+    environment:
+      INGEST_URL: http://ingest:8001
+      EVENT_URL: http://user-event:8002
+      FEED_URL: http://feed-api:8005
+    depends_on:
+      ingest:
+        condition: service_healthy
+      user-event:
+        condition: service_healthy
+    restart: unless-stopped
+
+
 volumes:
   qdrant_data:
   s3_data:

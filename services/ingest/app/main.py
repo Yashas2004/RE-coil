@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from app.embedder import CATEGORIES, embed_video
+from app.embedder import CATEGORIES, embed_video, get_embedder
 from app.store import Store
 
 store: Store | None = None
@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     global store
     store = Store()
     store.ensure_collection()
+    get_embedder()   # load CLIP now (a few seconds), not on the first request
     yield
     # (anything after yield runs at shutdown)
 
@@ -42,7 +43,7 @@ class VideoIn(BaseModel):
 
 
 def ingest_one(video: VideoIn):
-    vector = embed_video(video.video_id, video.category)
+    vector = embed_video(video.video_id, video.category, video.title)
     store.save_video(
         video.video_id, video.title, video.category, video.duration_s, vector
     )
@@ -50,7 +51,7 @@ def ingest_one(video: VideoIn):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "embedder": get_embedder().name}
 
 
 @app.get("/categories")

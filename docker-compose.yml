@@ -206,6 +206,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  model-server:
+    build: ./services/model-server
+    container_name: recoil-model-server
+    ports:
+      - "8004:8004"
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      S3_ENDPOINT: http://s3:8333
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 5s
+      retries: 10
+
+
 volumes:
   qdrant_data:
   s3_data:

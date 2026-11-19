@@ -53,3 +53,21 @@ def test_watch_time_looks_realistic():
             assert 12000 <= watch_ms <= 20000
         else:
             assert watch_ms <= 1500
+
+
+def test_holdout_hash_matches_feed_api():
+    """feed-api/holdout.go uses FNV-1a too. u000000 lands in control there,
+    so it must here, or coverage would judge users the model never served."""
+    from app.coverage import fnv32a, in_holdout
+    assert fnv32a("") == 0x811C9DC5          # FNV-1a offset basis: the standard test vector
+    assert fnv32a("a") == 0xE40C292C         # published FNV-1a 32-bit test vector
+    assert in_holdout("u000000") is True
+    assert in_holdout("u000001") is False
+
+
+def test_top_two_categories():
+    from app.coverage import top_two_categories
+    category_of = {"a": "music", "b": "music", "c": "pets", "d": "tech"}
+    scores = [{"video_id": "a", "p_watch": 0.9}, {"video_id": "b", "p_watch": 0.7},
+              {"video_id": "c", "p_watch": 0.85}, {"video_id": "d", "p_watch": 0.1}]
+    assert top_two_categories(scores, category_of) == {"music", "pets"}

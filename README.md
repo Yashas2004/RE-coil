@@ -8,18 +8,20 @@ It's the same shape as a TikTok-style system: two-tower retrieval, a multi-stage
 
 ## Results
 
+![Live dashboard](docs/dashboard.png)
+
 Measured on a live run with 500 simulated users and 1,000 videos:
 
-| | |
-|---|---|
-| Watch rate, random feed (no model) | **21%** |
-| Watch rate, self-trained model | **47%** at first promotion, **~61%** at steady state |
-| Theoretical ceiling with the diversity cap | ~60% (see *Trade-offs*) |
-| A/B: model vs. trending-only control | **60.9% vs. 17.1%** watch rate |
-| Validation AUC (champion re-scored on live data) | **~0.76** |
-| Model knows both of a user's hidden tastes | **98.5%** of users |
-| Predicted vs. true watch probability (liked videos) | 0.72–0.74 vs. 0.75 (well calibrated) |
-| Feed latency p95 | 230 ms → **~100 ms** after removing PyTorch from the request path |
+|                                                     |                                                                   |
+| --------------------------------------------------- | ----------------------------------------------------------------- |
+| Watch rate, random feed (no model)                  | **21%**                                                           |
+| Watch rate, self-trained model                      | **47%** at first promotion, **~61%** at steady state              |
+| Theoretical ceiling with the diversity cap          | ~60% (see _Trade-offs_)                                           |
+| A/B: model vs. trending-only control                | **61.3% vs. 21.7%** watch rate (**+182%** lift)                   |
+| Validation AUC (champion re-scored on live data)    | **~0.76**                                                         |
+| Model knows both of a user's hidden tastes          | **98.5%** of users                                                |
+| Predicted vs. true watch probability (liked videos) | 0.72–0.74 vs. 0.75 (well calibrated)                              |
+| Feed latency p95                                    | 230 ms → **~100 ms** after removing PyTorch from the request path |
 
 Nobody tells the model what any user likes. Each simulated user secretly loves 2 of 10 categories; the system has to discover that from watches and skips alone.
 
@@ -66,6 +68,7 @@ flowchart LR
 **Two-tower model.** One small network turns a user into a 64-number taste vector; another turns a video's content vector into 64 numbers in the same space. Their dot product is the score. Because the towers only meet at the very end, every video's vector is computed once and stored in Qdrant, and a request only computes the user's side. That's what makes searching the whole catalogue fast. Trained pointwise with binary cross-entropy on watched/skipped.
 
 **Feed pipeline** (`feed-api`), the multi-stage funnel real recommenders use:
+
 1. **Retrieval:** nearest neighbours to the user's vector in Qdrant (200 candidates), with recently seen videos filtered out inside the search.
 2. **Ranking:** watch probability for every candidate plus trending videos.
 3. **Re-ranking:** at most 2 videos per category, plus an **exploration** slot: the user's best guess from a category the feed isn't showing.
@@ -82,15 +85,19 @@ The most useful part of this project was the bugs. Each one was caught by a test
 
 1. **The first models couldn't pass the gate (AUC 0.54).** With ~17 events per user, 5 epochs at batch 512 meant only ~70 gradient updates. More steps and a higher learning rate fixed it, and the quality gate correctly refused to ship the bad models in the meantime.
 
-2. **The loop froze: every new model was rejected.** The live model claimed AUC 0.81, and new ones scored ~0.75. But the 0.81 was measured when users saw *random* videos (easy to predict); later data came from *personalized* feeds (much harder). One fixed model scores 0.79 vs. 0.62 on the two kinds of data. AUCs from different data can't be compared. Fix: **champion vs. challenger** on identical rows. Re-scored fairly, the "0.81" champion was really 0.754, and the challenger won with 0.760.
+2. **The loop froze: every new model was rejected.** The live model claimed AUC 0.81, and new ones scored ~0.75. But the 0.81 was measured when users saw _random_ videos (easy to predict); later data came from _personalized_ feeds (much harder). One fixed model scores 0.79 vs. 0.62 on the two kinds of data. AUCs from different data can't be compared. Fix: **champion vs. challenger** on identical rows. Re-scored fairly, the "0.81" champion was really 0.754, and the challenger won with 0.760.
 
 3. **Different videos got identical scores.** The higher learning rate from bug 1 had killed **97.7% of the item tower's ReLU neurons**; only 416 of 1,000 videos kept a distinct vector. Switching to LeakyReLU at lr 0.003 restored all 1,000 and raised AUC on larger data from 0.70 to 0.81. A regression test now fails if two videos ever share a vector.
 
 4. **Grafana showed feed p99 ~8× what I'd measured by hand.** The model-server called PyTorch on every request, and 20 concurrent requests plus the trainer fought over the CPU cores (0.37 ms alone, **106 ms p95** under load). All tower vectors are now precomputed when a model loads, so requests are a NumPy lookup and one matrix multiply: **0.3 ms p95**. `/score` dropped from ~200 ms to ~0 in production.
 
-5. **I misdiagnosed a "filter bubble".** One user who likes comedy and music got only comedy, and I assumed the model hadn't learned music. A coverage metric against the bots' hidden tastes proved me wrong: the model *knew* both tastes for 98.5% of users. Raw top-10 retrieval just showed both only 20.8% of the time, because same-category videos have similar vectors. That gap is the job of the category cap and exploration.
+![Feed latency before and after](docs/latency.png)
 
-6. **Trending measured exposure, not quality.** It ranked by watch *count*, and the model shows comedy to comedy fans, so trending became mostly comedy and control users did worse than random (17% vs. 21%). It now ranks by **smoothed watch rate**, so a video shown 100 times and watched 60 beats one shown 1,000 times and watched 250.
+5. **I misdiagnosed a "filter bubble".** One user who likes comedy and music got only comedy, and I assumed the model hadn't learned music. A coverage metric against the bots' hidden tastes proved me wrong: the model _knew_ both tastes for 98.5% of users. Raw top-10 retrieval just showed both only 20.8% of the time, because same-category videos have similar vectors. That gap is the job of the category cap and exploration.
+
+6. **Trending measured exposure, not quality.** It ranked by watch _count_, and the model shows comedy to comedy fans, so trending became mostly comedy and control users did worse than random (17% vs. 21%). It now ranks by **smoothed watch rate**, so a video shown 100 times and watched 60 beats one shown 1,000 times and watched 250.
+
+7. After the fix, the control group rose from 17.1% to 21.7% (back to the random baseline) and trending spans six categories instead of mostly comedy. The A/B lift dropped from +257% to +182%: the old number was inflated by a handicapped control group.
 
 ## Trade-offs and honest limits
 
@@ -114,12 +121,12 @@ make down
 
 No `make` (e.g. Windows cmd)? Each target is one line in the `Makefile`. For example, `make up` is `docker compose up -d --build --wait`.
 
-| What | Where |
-|---|---|
-| Live dashboard: watch rate, A/B, training runs, feed inspector | http://localhost:3000 |
-| Grafana: latency, throughput, AUC (admin/admin) | http://localhost:3001 |
-| Prometheus targets | http://localhost:9090/targets |
-| A feed, directly | `curl "localhost:8005/feed?user_id=u000001&limit=5"` |
+| What                                                           | Where                                                |
+| -------------------------------------------------------------- | ---------------------------------------------------- |
+| Live dashboard: watch rate, A/B, training runs, feed inspector | http://localhost:3000                                |
+| Grafana: latency, throughput, AUC (admin/admin)                | http://localhost:3001                                |
+| Prometheus targets                                             | http://localhost:9090/targets                        |
+| A feed, directly                                               | `curl "localhost:8005/feed?user_id=u000001&limit=5"` |
 
 ## Layout
 
@@ -138,5 +145,3 @@ infra/             Postgres schema + quality gate, Prometheus, Grafana dashboard
 ```
 
 Each service has its own tests; CI runs all of them on every push.
-
-

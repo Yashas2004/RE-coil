@@ -1,9 +1,30 @@
 global:
-  scrape_interval: 5s
+  scrape_interval: 5s   # how often Prometheus visits every /metrics page
 
+# One job per service. Prometheus PULLS from each target (services never push).
+# If a target stops answering, Prometheus marks it "down": that alone is a
+# useful alert. Check http://localhost:9090/targets to see them all.
 scrape_configs:
-  # Prometheus watching itself — proves the setup works.
-  # We'll add one job per service as we build them.
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+  - job_name: feed-api
+    static_configs:
+      - targets: ["feed-api:8005"]
+
+  - job_name: user-event
+    static_configs:
+      - targets: ["user-event:8002"]
+
+  - job_name: model-server
+    static_configs:
+      - targets: ["model-server:8004"]
+
+  - job_name: feature
+    static_configs:
+      - targets: ["feature:9100"]
+
+  - job_name: training
+    static_configs:
+      - targets: ["training:9101"]

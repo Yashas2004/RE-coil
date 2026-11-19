@@ -1,0 +1,9 @@
+# "Provisioning" = Grafana loads dashboards from files at startup.
+# The dashboard lives in git next to the code, instead of only inside Grafana.
+apiVersion: 1
+providers:
+  - name: recoil
+    folder: RE-coil
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards

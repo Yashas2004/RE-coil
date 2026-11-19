@@ -19,6 +19,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
+import torch
 from fastapi import FastAPI, HTTPException, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel
@@ -32,7 +33,13 @@ from app.index import (
 from app.loader import download_checkpoint, read_latest, s3_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("model-server")
+
+# PyTorch only runs when a model loads now, never per request. One thread is
+# plenty for that, and stops it fighting the request threads (and the trainer)
+# for CPU cores.
+torch.set_num_threads(1)
 
 
 # ---------- metrics ----------

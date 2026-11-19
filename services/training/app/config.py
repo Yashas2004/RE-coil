@@ -16,4 +16,6 @@ MIN_SAMPLES = int(os.getenv("MIN_SAMPLES", "1000"))        # don't train on tiny
 MIN_NEW_SAMPLES = int(os.getenv("MIN_NEW_SAMPLES", "500"))  # retrain after this many new events
 MAX_SAMPLES = int(os.getenv("MAX_SAMPLES", "200000"))       # train on the most recent N
 TRAIN_INTERVAL_S = int(os.getenv("TRAIN_INTERVAL_S", "30"))
-EPOCHS = int(os.getenv("EPOCHS", "5"))
+EPOCHS = int(os.getenv("EPOCHS", "10"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "256"))
+LR = float(os.getenv("LR", "0.01"))

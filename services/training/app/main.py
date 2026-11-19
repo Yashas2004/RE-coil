@@ -51,7 +51,9 @@ def run_once(db, qdrant, s3, total_rows: int):
     dataset = build_dataset(rows, vectors)
     log.info("training %s on %d samples, %d users", version, len(dataset["labels"]), dataset["num_users"])
 
-    model, val_auc = train_two_tower(dataset, epochs=config.EPOCHS)
+    model, val_auc = train_two_tower(
+        dataset, epochs=config.EPOCHS, batch_size=config.BATCH_SIZE, lr=config.LR
+    )
     key = save_model(s3, model, dataset["user_vocab"], version, dataset["content"].shape[1])
 
     current = get_latest(s3)

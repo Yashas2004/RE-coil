@@ -30,6 +30,7 @@ type Config struct {
 	Candidates     int
 	MaxPerCategory int
 	ExploreRate    float64
+	HoldoutPct     int
 }
 
 func getenv(key, fallback string) string {
@@ -43,6 +44,7 @@ func loadConfig() Config {
 	candidates, _ := strconv.Atoi(getenv("CANDIDATES", "200"))
 	maxPerCategory, _ := strconv.Atoi(getenv("MAX_PER_CATEGORY", "2"))
 	exploreRate, _ := strconv.ParseFloat(getenv("EXPLORE_RATE", "0.2"), 64)
+	holdoutPct, _ := strconv.Atoi(getenv("HOLDOUT_PCT", "10"))
 	return Config{
 		Port:           getenv("PORT", "8005"),
 		ModelURL:       getenv("MODEL_SERVER_URL", "http://localhost:8004"),
@@ -50,6 +52,7 @@ func loadConfig() Config {
 		Candidates:     candidates,
 		MaxPerCategory: maxPerCategory,
 		ExploreRate:    exploreRate,
+		HoldoutPct:     holdoutPct,
 	}
 }
 
@@ -67,6 +70,15 @@ type Server struct {
 }
 
 func (s *Server) buildFeed(ctx context.Context, userID string, limit int) (FeedResponse, error) {
+	// A/B test: the control group never touches the model.
+	if InHoldout(userID, s.cfg.HoldoutPct) {
+		seen, _ := s.store.Seen(ctx, userID)
+		trendingIDs, _ := s.store.Trending(ctx, 200)
+		feed := s.trendingOnly(userID, trendingIDs, seen, limit)
+		feed.ModelVersion = "control"
+		return feed, nil
+	}
+
 	seen, err := s.store.Seen(ctx, userID)
 	if err != nil {
 		log.Printf("redis seen: %v", err) // not fatal: we just might repeat a video

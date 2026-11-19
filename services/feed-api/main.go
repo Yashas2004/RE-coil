@@ -21,6 +21,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Config struct {
@@ -174,15 +176,25 @@ func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 
 	feed, err := s.buildFeed(ctx, userID, limit)
 	if err != nil {
+		feedRequests.WithLabelValues("unknown", "error").Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	variant := variantOf(feed.ModelVersion)
 	if len(feed.Items) == 0 {
+		feedRequests.WithLabelValues(variant, "empty").Inc()
 		http.Error(w, "nothing to recommend yet", http.StatusServiceUnavailable)
 		return
 	}
 
-	feed.LatencyMs = float64(time.Since(start).Microseconds()) / 1000
+	elapsed := time.Since(start)
+	feedLatency.WithLabelValues(variant).Observe(elapsed.Seconds())
+	feedRequests.WithLabelValues(variant, "ok").Inc()
+	for _, item := range feed.Items {
+		feedItems.WithLabelValues(item.Source).Inc()
+	}
+
+	feed.LatencyMs = float64(elapsed.Microseconds()) / 1000
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(feed)
 }
@@ -200,6 +212,7 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 	mux.HandleFunc("GET /feed", server.handleFeed)
+	mux.Handle("GET /metrics", promhttp.Handler()) // Prometheus scrapes this
 
 	log.Printf("feed-api listening on :%s (model=%s)", cfg.Port, cfg.ModelURL)
 	log.Fatal(http.ListenAndServe(":"+cfg.Port, mux))

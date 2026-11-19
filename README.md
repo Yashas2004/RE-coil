@@ -139,6 +139,4 @@ infra/             Postgres schema + quality gate, Prometheus, Grafana dashboard
 
 Each service has its own tests; CI runs all of them on every push.
 
-## Credit
 
-The architecture follows [siphon](https://github.com/bit2swaz/siphon) by bit2swaz, which I used as a reference while building this from scratch to learn how recommendation systems work end to end.

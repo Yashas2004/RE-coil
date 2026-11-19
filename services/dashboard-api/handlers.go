@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"time"
 
@@ -177,28 +176,19 @@ func (a *API) TrainingRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 type TrendingItem struct {
-	VideoID  string  `json:"video_id"`
-	Title    string  `json:"title"`
-	Category string  `json:"category"`
-	Watches  float64 `json:"watches"`
+	VideoID   string  `json:"video_id"`
+	Title     string  `json:"title"`
+	Category  string  `json:"category"`
+	WatchRate float64 `json:"watch_rate"`
 }
 
-// GET /api/trending: same Redis buckets the feed uses, with titles from Postgres.
+// GET /api/trending: the feature service's ranking (smoothed watch rate), with titles.
 func (a *API) Trending(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	now := time.Now().UTC()
-	keys := []string{
-		"trending:" + now.Format("2006010215"),
-		"trending:" + now.Add(-time.Hour).Format("2006010215"),
-	}
-	rows, err := a.rdb.ZUnionWithScores(ctx, redis.ZStore{Keys: keys}).Result()
+	rows, err := a.rdb.ZRevRangeWithScores(ctx, "trending:score", 0, 9).Result()
 	if err != nil {
 		fail(w, err)
 		return
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Score > rows[j].Score })
-	if len(rows) > 10 {
-		rows = rows[:10]
 	}
 
 	items := []TrendingItem{}
@@ -206,7 +196,7 @@ func (a *API) Trending(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		id := fmt.Sprint(row.Member)
 		ids = append(ids, id)
-		items = append(items, TrendingItem{VideoID: id, Watches: row.Score})
+		items = append(items, TrendingItem{VideoID: id, WatchRate: row.Score})
 	}
 	details := a.videoDetails(ctx, ids)
 	for i := range items {

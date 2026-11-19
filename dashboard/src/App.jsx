@@ -166,13 +166,13 @@ function Trending() {
   return (
     <section className="card">
       <h2>Trending now</h2>
-      <p className="muted small">Most-watched videos this hour + last hour (from Redis).</p>
+      <p className="muted small">Best smoothed watch rate, this hour + last hour. A rate, not a count: shown-a-lot isn't the same as good.</p>
       <ol className="trending">
         {(data ?? []).map((item) => (
           <li key={item.video_id}>
             <span className={`chip cat-${item.category}`}>{item.category}</span>
             <span className="title">{item.title || item.video_id}</span>
-            <span className="muted small">{compact(item.watches)} watches</span>
+            <span className="muted small">{percent(item.watch_rate, 0)} watched</span>
           </li>
         ))}
       </ol>

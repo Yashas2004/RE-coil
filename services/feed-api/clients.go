@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -114,26 +113,8 @@ func (s *Store) Seen(ctx context.Context, userID string) ([]string, error) {
 	return s.rdb.LRange(ctx, "seen:"+userID, 0, 199).Result()
 }
 
-// Trending sums this hour's and last hour's watch counts and returns the top n.
-// Key format must match services/feature/app/realtime.py: trending:YYYYMMDDHH (UTC).
+// Trending returns the top n videos by smoothed watch RATE. The feature service
+// computes the ranking (services/feature/app/realtime.py); we just read it.
 func (s *Store) Trending(ctx context.Context, n int) ([]string, error) {
-	now := time.Now().UTC()
-	keys := []string{
-		"trending:" + now.Format("2006010215"),
-		"trending:" + now.Add(-time.Hour).Format("2006010215"),
-	}
-	rows, err := s.rdb.ZUnionWithScores(ctx, redis.ZStore{Keys: keys}).Result()
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Score > rows[j].Score })
-
-	ids := []string{}
-	for _, row := range rows {
-		if len(ids) == n {
-			break
-		}
-		ids = append(ids, fmt.Sprint(row.Member))
-	}
-	return ids, nil
+	return s.rdb.ZRevRange(ctx, "trending:score", 0, int64(n-1)).Result()
 }

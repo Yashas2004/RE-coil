@@ -172,6 +172,24 @@ services:
       retries: 10
 
 
+  feature:
+    build: ./services/feature
+    container_name: recoil-feature
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: interactions
+      POSTGRES_DSN: postgresql://recoil:recoil@postgres:5432/recoil
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+
 volumes:
   qdrant_data:
   s3_data:

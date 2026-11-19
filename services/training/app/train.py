@@ -26,7 +26,7 @@ def time_split(n: int, val_fraction: float = 0.2) -> tuple[slice, slice]:
 
 
 def train_two_tower(dataset: dict, epochs: int = 5, batch_size: int = 256,
-                    lr: float = 1e-2, seed: int = 0) -> tuple[TwoTower, float]:
+                    lr: float = 3e-3, seed: int = 0) -> tuple[TwoTower, float]:
     torch.manual_seed(seed)
 
     users = torch.tensor(dataset["user_idx"], dtype=torch.long)

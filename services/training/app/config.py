@@ -18,5 +18,5 @@ MAX_SAMPLES = int(os.getenv("MAX_SAMPLES", "200000"))       # train on the most 
 TRAIN_INTERVAL_S = int(os.getenv("TRAIN_INTERVAL_S", "30"))
 EPOCHS = int(os.getenv("EPOCHS", "10"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "256"))
-LR = float(os.getenv("LR", "0.01"))
+LR = float(os.getenv("LR", "0.003"))  # 0.01 killed 97% of neurons; see model.py
 TORCH_THREADS = int(os.getenv("TORCH_THREADS", "2"))

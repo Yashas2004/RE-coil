@@ -17,6 +17,14 @@ That's how you search millions of videos in milliseconds.
 
 User index 0 is reserved for "unknown user" (someone who signed up after the
 model was trained). They get a generic, average-ish taste vector.
+
+Activation: LeakyReLU, not ReLU. A ReLU outputs exactly 0 for any negative
+input, and then its gradient is 0 too, so a big weight update can push a
+neuron negative for EVERY input and it never learns again ("dead ReLU").
+At lr=0.01 we measured 97.7% of item-tower neurons dead and 584 of 1000
+videos collapsed onto shared vectors (identical scores). LeakyReLU keeps a
+small slope (0.1) below zero, so a neuron can always find its way back.
+It has no weights, so models saved with ReLU still load.
 """
 
 import torch
@@ -33,12 +41,12 @@ class TwoTower(nn.Module):
 
         self.user_tower = nn.Sequential(
             nn.Linear(user_dim, 128),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(128, out_dim),
         )
         self.item_tower = nn.Sequential(
             nn.Linear(content_dim, 128),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(128, out_dim),
         )
 

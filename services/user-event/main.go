@@ -15,6 +15,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func getenv(key, fallback string) string {
@@ -39,16 +41,20 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	mux.Handle("GET /metrics", promhttp.Handler())
+
 	mux.HandleFunc("POST /event", func(w http.ResponseWriter, r *http.Request) {
 		var event Event
 		err := json.NewDecoder(r.Body).Decode(&event)
 		if err != nil {
+			eventsTotal.WithLabelValues("invalid").Inc()
 			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		err = event.Validate()
 		if err != nil {
+			eventsTotal.WithLabelValues("invalid").Inc()
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -60,13 +66,17 @@ func main() {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 
+		publishStart := time.Now()
 		err = producer.Publish(ctx, event)
+		publishSeconds.Observe(time.Since(publishStart).Seconds())
 		if err != nil {
+			eventsTotal.WithLabelValues("kafka_error").Inc()
 			log.Printf("kafka publish failed: %v", err)
 			http.Error(w, "could not record event", http.StatusServiceUnavailable)
 			return
 		}
 
+		eventsTotal.WithLabelValues("accepted").Inc()
 		w.WriteHeader(http.StatusAccepted) // 202: "got it, processing later"
 	})
 

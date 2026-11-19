@@ -1,0 +1,77 @@
+# CI: every push and pull request runs every service's tests, in parallel.
+# GitHub shows a green tick or a red cross next to each commit.
+#
+# Note: these jobs run each service's tests on its own, without Kafka or
+# Postgres. The tests were written that way on purpose (fakeredis,
+# in-memory Qdrant, synthetic worlds), which is why CI can stay this simple.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    name: python / ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false          # one broken service shouldn't hide results for the others
+      matrix:
+        service: [ingest, feature, training, model-server, sim-engine]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install CPU-only PyTorch (only the ML services need it)
+        if: matrix.service == 'training' || matrix.service == 'model-server'
+        run: pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  go:
+    name: go / ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [user-event, feed-api, dashboard-api]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: services/${{ matrix.service }}/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  compose:
+    name: docker-compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet

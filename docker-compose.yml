@@ -190,6 +190,22 @@ services:
     restart: unless-stopped
 
 
+  training:
+    build: ./services/training
+    container_name: recoil-training
+    environment:
+      POSTGRES_DSN: postgresql://recoil:recoil@postgres:5432/recoil
+      QDRANT_URL: http://qdrant:6333
+      S3_ENDPOINT: http://s3:8333
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
   s3_data:

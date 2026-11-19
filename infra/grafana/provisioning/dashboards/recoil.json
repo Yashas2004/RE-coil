@@ -667,7 +667,7 @@
     {
       "type": "timeseries",
       "title": "Feature batch write time",
-      "description": "",
+      "description": "One unit per panel: mixing a count onto a seconds axis made 300 events read as '5 mins'.",
       "id": 14,
       "datasource": {
         "type": "prometheus",
@@ -702,8 +702,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(recoil_feature_batch_seconds_bucket[1m])))",
-          "legendFormat": "p95",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(recoil_feature_batch_seconds_bucket[1m])))",
+          "legendFormat": "p50",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -711,8 +711,8 @@
         },
         {
           "refId": "B",
-          "expr": "recoil_feature_last_batch_size",
-          "legendFormat": "last batch size (right axis is count)",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(recoil_feature_batch_seconds_bucket[1m])))",
+          "legendFormat": "p95",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -887,7 +887,7 @@
     {
       "type": "timeseries",
       "title": "Cold-start requests / sec",
-      "description": "",
+      "description": "Feed requests for users the live model never trained on.",
       "id": 19,
       "datasource": {
         "type": "prometheus",
@@ -901,7 +901,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "reqps",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
@@ -924,15 +924,6 @@
           "refId": "A",
           "expr": "sum(rate(recoil_cold_start_requests_total[1m]))",
           "legendFormat": "users unknown to the live model",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        },
-        {
-          "refId": "B",
-          "expr": "increase(recoil_model_reloads_total[10m])",
-          "legendFormat": "model hot-swaps per 10m",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"

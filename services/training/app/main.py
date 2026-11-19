@@ -28,6 +28,7 @@ from app.registry import (
 from app.train import build_dataset, train_two_tower
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("training")
 
 running = True

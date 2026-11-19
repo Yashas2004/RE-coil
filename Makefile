@@ -1,4 +1,4 @@
-.PHONY: up seed down reset logs ps psql topics test coverage quality-gate
+.PHONY: up seed down reset logs ps psql topics test coverage coldstart eval-embeddings quality-gate
 
 # Build every image (each build runs that service's tests) and wait until healthy.
 up:
@@ -28,6 +28,14 @@ test:
 # Does the model know each bot's hidden tastes? (KNOWS vs SHOWS)
 coverage:
 	docker compose run --rm sim-engine python -m app.coverage
+
+# Upload a never-watched video and see who the model would show it to.
+coldstart:
+	docker compose run --rm sim-engine python -m app.coldstart
+
+# Hash vs. CLIP embeddings on the real catalogue.
+eval-embeddings:
+	docker compose exec ingest python -m app.eval_embeddings
 
 # Fails (non-zero exit) unless a model above the AUC gate was promoted in the last 10 minutes.
 quality-gate:

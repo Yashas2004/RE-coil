@@ -19,7 +19,8 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
@@ -32,6 +33,16 @@ from app.loader import download_checkpoint, read_latest, s3_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("model-server")
+
+
+# ---------- metrics ----------
+REQUEST_SECONDS = Histogram(
+    "recoil_model_server_seconds", "Time to answer one request.", ["endpoint"],
+    buckets=[0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1],
+)
+RELOADS = Counter("recoil_model_reloads_total", "Hot swaps to a new model or index.")
+LIVE_AUC = Gauge("recoil_model_live_auc", "AUC of the model being served (as recorded at promotion).")
+COLD_START = Counter("recoil_cold_start_requests_total", "Candidate requests for users the model never saw.")
 
 
 class Live:
@@ -69,6 +80,8 @@ def refresh():
 
     previous = current
     current = Live(bundle, index_name, latest["auc"], len(video_ids))   # <- the swap
+    RELOADS.inc()
+    LIVE_AUC.set(latest["auc"])
     log.info("now serving %s", bundle.version)
 
     keep = {index_name}
@@ -120,6 +133,11 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/metrics")
+def prometheus_metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.get("/model")
 def model_info():
     live = current
@@ -134,8 +152,11 @@ def model_info():
 
 
 @app.post("/candidates")
+@REQUEST_SECONDS.labels(endpoint="candidates").time()
 def candidates(body: CandidatesIn):
     live = require_model()
+    if not live.bundle.is_known(body.user_id):
+        COLD_START.inc()
     user_vector = live.bundle.user_vector(body.user_id)
     items = search(qdrant, live.index_name, user_vector, body.k, body.exclude)
     return {
@@ -146,6 +167,7 @@ def candidates(body: CandidatesIn):
 
 
 @app.post("/score")
+@REQUEST_SECONDS.labels(endpoint="score").time()
 def score(body: ScoreIn):
     live = require_model()
     scored = live.bundle.score(body.user_id, body.video_ids)

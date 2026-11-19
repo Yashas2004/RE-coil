@@ -20,7 +20,7 @@ import psycopg
 import redis
 from confluent_kafka import Consumer
 
-from app import config
+from app import config, telemetry
 from app.events import parse_event
 from app.realtime import record_events
 from app.sink import write_events
@@ -40,6 +40,7 @@ def stop(signum, frame):
 def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
+    telemetry.serve()
 
     consumer = Consumer(
         {
@@ -74,9 +75,14 @@ def main():
                 continue
             events.append(event)
 
+        telemetry.events_skipped.inc(skipped)
         if events:
-            inserted = write_events(db, events)
-            record_events(redis_client, events)
+            with telemetry.batch_seconds.time():   # measures how long the block takes
+                inserted = write_events(db, events)
+                record_events(redis_client, events)
+            telemetry.events_consumed.inc(len(events))
+            telemetry.rows_stored.inc(inserted)
+            telemetry.last_batch_size.set(len(events))
             total += inserted
             log.info(
                 "batch: %d events, %d stored, %d skipped (total stored %d)",

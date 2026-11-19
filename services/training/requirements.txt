@@ -3,3 +3,4 @@ psycopg[binary]==3.2.3
 qdrant-client==1.12.2
 boto3==1.35.90
 pytest==8.3.4
+prometheus-client==0.21.1

@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 import psycopg
 from qdrant_client import QdrantClient
 
-from app import config
+from app import config, telemetry
 from app.data import count_interactions, fetch_item_vectors, load_interactions
 from app.registry import (
     ensure_bucket, get_latest, last_trained_count, load_checkpoint, promote,
@@ -50,6 +50,7 @@ def run_once(db, qdrant, s3, total_rows: int):
     vectors = fetch_item_vectors(qdrant, video_ids)
 
     dataset = build_dataset(rows, vectors)
+    telemetry.samples.set(len(dataset["labels"]))
     log.info("training %s on %d samples, %d users", version, len(dataset["labels"]), dataset["num_users"])
 
     model, val_auc = train_two_tower(
@@ -67,6 +68,13 @@ def run_once(db, qdrant, s3, total_rows: int):
     promoted = should_promote(val_auc, live_auc)
     if promoted:
         promote(s3, version, key, val_auc)
+        telemetry.last_promotion.set_to_current_time()
+
+    telemetry.auc.labels(role="challenger").set(val_auc)
+    if live_auc is not None:
+        telemetry.auc.labels(role="champion").set(live_auc)
+    telemetry.runs.labels(outcome="promoted" if promoted else "rejected").inc()
+    telemetry.duration.observe((datetime.now(timezone.utc) - started_at).total_seconds())
 
     record_run(db, version, total_rows, val_auc, promoted, key, started_at, datetime.now(timezone.utc))
     champion_text = "none" if live_auc is None else f"{live_auc:.4f}"
@@ -83,6 +91,7 @@ def main():
     qdrant = QdrantClient(url=config.QDRANT_URL)
     s3 = s3_client()
     ensure_bucket(s3)
+    telemetry.serve()
 
     last_count = last_trained_count(db)
     log.info("trainer started; last run saw %d interactions", last_count)
@@ -95,6 +104,7 @@ def main():
                 run_once(db, qdrant, s3, total)
                 last_count = total
             except Exception:
+                telemetry.runs.labels(outcome="error").inc()
                 log.exception("training run failed; will retry next interval")
         else:
             log.info("waiting: %d interactions (%d new), need %d total / %d new",

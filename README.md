@@ -99,12 +99,14 @@ The most useful part of this project was the bugs. Each one was caught by a test
 
 7. After the fix, the control group rose from 17.1% to 21.7% (back to the random baseline) and trending spans six categories instead of mostly comedy. The A/B lift dropped from +257% to +182%: the old number was inflated by a handicapped control group.
 
+8. **CLIP "improved" AUC from 0.765 to 0.83, and then it didn't.** The embedding swap briefly broke the feed, so bots watched near-random videos, which made the validation data easy. Once the feed recovered, AUC settled back at ~0.755. It was the same trap as #2, and I caught it because it had already caught me once.
+
 ## Trade-offs and honest limits
 
 - **Engagement vs. variety.** With a 5-video feed, 2 liked categories and a cap of 2 per category, the best possible watch rate is ~60%, and the model reaches it. A cap of 3 would score higher with less variety. `MAX_PER_CATEGORY` is an env var.
 - **Simulated users.** Signals come from bots with simple, fixed tastes, not people.
 - **Single objective.** The model predicts one thing (watch or skip). Production systems predict several (likes, shares, follows, watch time) and blend them; that multi-task ranking head is the biggest gap between this and the real thing.
-- **Fake content embeddings.** Videos get deterministic 256-d vectors clustered by category instead of CLIP/Whisper embeddings. Every service only sees "a 256-number vector", so swapping in real encoders touches one file (`services/ingest/app/embedder.py`).
+- **Text-only content understanding.** Videos are embedded with CLIP (ViT-B/32) from their title and category; the simulation has no real frames or audio. Swapping it in left AUC (~0.76) and watch rate unchanged and produced a small, controlled cold-start shift: pets fans score a never-watched "Kitten plays piano" (filed under music) at 0.20 vs. 0.16 for a "Guitar solo" control. It can't do more here, because the simulated users reward category labels, not content.
 - **One machine.** No sharding, replication, or autoscaling.
 
 ## Run it
@@ -132,7 +134,7 @@ No `make` (e.g. Windows cmd)? Each target is one line in the `Makefile`. For exa
 
 ```
 services/
-  ingest/          Python  videos -> embeddings -> Postgres + Qdrant
+  ingest/          Python  videos -> CLIP embeddings -> Postgres + Qdrant
   user-event/      Go      POST /event -> Kafka
   feature/         Python  Kafka -> interactions (Postgres) + trending/seen (Redis)
   training/        Python  retrain loop, champion vs. challenger, model registry

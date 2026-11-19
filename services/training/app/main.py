@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timezone
 
 import psycopg
+import torch
 from qdrant_client import QdrantClient
 
 from app import config, telemetry
@@ -30,6 +31,11 @@ from app.train import build_dataset, champion_auc, model_from_checkpoint, train_
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("training")
+
+# By default PyTorch grabs every CPU core. On one machine shared with the
+# serving path, that makes the feed slow every time a retrain kicks off.
+# Training gets slightly slower; everyone else gets their CPU back.
+torch.set_num_threads(config.TORCH_THREADS)
 
 running = True
 

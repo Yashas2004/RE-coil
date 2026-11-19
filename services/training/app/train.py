@@ -72,6 +72,45 @@ def train_two_tower(dataset: dict, epochs: int = 5, batch_size: int = 256,
     return model, val_auc
 
 
+def model_from_checkpoint(checkpoint: dict) -> tuple[TwoTower, dict]:
+    model = TwoTower(num_users=checkpoint["num_users"], content_dim=checkpoint["content_dim"])
+    model.load_state_dict(checkpoint["state_dict"])
+    model.eval()
+    return model, checkpoint["user_vocab"]
+
+
+def champion_auc(champion: TwoTower, champion_vocab: dict, dataset: dict) -> float:
+    """Score the CURRENTLY LIVE model on the challenger's validation slice.
+
+    AUC only means something relative to the data it was measured on. As the
+    model gets better, the feed shows users more of what they like, and the
+    remaining "watch or skip?" decisions get harder. So a newer model measured
+    on newer data can look worse than an old model measured on easy old data,
+    even when it's actually better. Comparing both on the SAME rows is the only
+    fair test. This is called champion vs. challenger.
+
+    The two models number their users differently, so we translate each row's
+    user back to its user_id, then into the champion's numbering (0 = unknown).
+    """
+    _, val_part = time_split(len(dataset["labels"]))
+
+    index_to_user = {}
+    for user_id, index in dataset["user_vocab"].items():
+        index_to_user[index] = user_id
+
+    champion_users = []
+    for index in dataset["user_idx"][val_part]:
+        user_id = index_to_user[int(index)]
+        champion_users.append(champion_vocab.get(user_id, 0))
+
+    with torch.no_grad():
+        scores = champion(
+            torch.tensor(champion_users, dtype=torch.long),
+            torch.tensor(dataset["content"][val_part], dtype=torch.float32),
+        )
+    return auc(dataset["labels"][val_part].tolist(), scores.tolist())
+
+
 def build_dataset(rows: list[tuple], vectors: dict[str, np.ndarray]) -> dict:
     """rows: (user_id, video_id, watched), oldest first.
     vectors: video_id -> content vector. Rows for videos with no vector are dropped."""

@@ -9,8 +9,8 @@ S3_BUCKET = os.getenv("S3_BUCKET", "models")
 
 # The quality gate: a new model must beat this AUC to be promoted.
 AUC_GATE = float(os.getenv("AUC_GATE", "0.65"))
-# ...and must not be noticeably worse than the model currently serving.
-AUC_TOLERANCE = float(os.getenv("AUC_TOLERANCE", "0.02"))
+# ...and must not be worse than the live model ON THE SAME DATA by more than this.
+AUC_TOLERANCE = float(os.getenv("AUC_TOLERANCE", "0.005"))
 
 MIN_SAMPLES = int(os.getenv("MIN_SAMPLES", "1000"))        # don't train on tiny data
 MIN_NEW_SAMPLES = int(os.getenv("MIN_NEW_SAMPLES", "500"))  # retrain after this many new events

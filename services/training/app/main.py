@@ -22,10 +22,10 @@ from qdrant_client import QdrantClient
 from app import config
 from app.data import count_interactions, fetch_item_vectors, load_interactions
 from app.registry import (
-    ensure_bucket, get_latest, last_trained_count, promote, record_run,
-    s3_client, save_model, should_promote,
+    ensure_bucket, get_latest, last_trained_count, load_checkpoint, promote,
+    record_run, s3_client, save_model, should_promote,
 )
-from app.train import build_dataset, train_two_tower
+from app.train import build_dataset, champion_auc, model_from_checkpoint, train_two_tower
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -57,13 +57,21 @@ def run_once(db, qdrant, s3, total_rows: int):
     )
     key = save_model(s3, model, dataset["user_vocab"], version, dataset["content"].shape[1])
 
+    # Champion vs. challenger: re-score the live model on THIS run's validation rows.
     current = get_latest(s3)
-    promoted = should_promote(val_auc, current)
+    live_auc = None
+    if current is not None:
+        champion, champion_vocab = model_from_checkpoint(load_checkpoint(s3, current["key"]))
+        live_auc = champion_auc(champion, champion_vocab, dataset)
+
+    promoted = should_promote(val_auc, live_auc)
     if promoted:
         promote(s3, version, key, val_auc)
 
     record_run(db, version, total_rows, val_auc, promoted, key, started_at, datetime.now(timezone.utc))
-    log.info("%s auc=%.4f gate=%.2f -> %s", version, val_auc, config.AUC_GATE,
+    champion_text = "none" if live_auc is None else f"{live_auc:.4f}"
+    log.info("%s challenger=%.4f champion=%s (same data) gate=%.2f -> %s",
+             version, val_auc, champion_text, config.AUC_GATE,
              "PROMOTED" if promoted else "rejected")
 
 

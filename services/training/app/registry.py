@@ -69,12 +69,23 @@ def promote(s3, version: str, key: str, auc: float):
     s3.put_object(Bucket=config.S3_BUCKET, Key=LATEST_KEY, Body=body.encode())
 
 
-def should_promote(new_auc: float, current: dict | None) -> bool:
-    if new_auc < config.AUC_GATE:
+def load_checkpoint(s3, key: str) -> dict:
+    response = s3.get_object(Bucket=config.S3_BUCKET, Key=key)
+    return torch.load(io.BytesIO(response["Body"].read()), weights_only=True)
+
+
+def should_promote(challenger_auc: float, champion_auc: float | None) -> bool:
+    """Both AUCs must come from the SAME validation rows (see train.champion_auc).
+
+    1. The challenger must clear the absolute quality bar.
+    2. It must not be meaningfully worse than the model already serving.
+       A tie goes to the challenger: it has seen newer data and newer users.
+    """
+    if challenger_auc < config.AUC_GATE:
         return False
-    if current is None:
+    if champion_auc is None:
         return True
-    return new_auc >= current["auc"] - config.AUC_TOLERANCE
+    return challenger_auc >= champion_auc - config.AUC_TOLERANCE
 
 
 def record_run(db, version, num_samples, auc, promoted, key, started_at, finished_at):

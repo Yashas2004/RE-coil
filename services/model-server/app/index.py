@@ -16,7 +16,7 @@ the new one on the side and then switching to it is an ATOMIC swap.
 import numpy as np
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
-    Distance, FieldCondition, Filter, MatchAny, PointStruct, VectorParams,
+    Distance, FieldCondition, Filter, MatchAny, MatchValue, PointStruct, VectorParams,
 )
 
 from app import config
@@ -81,14 +81,19 @@ def cleanup_old_indexes(qdrant: QdrantClient, keep: set[str]):
             qdrant.delete_collection(collection.name)
 
 
-def search(qdrant: QdrantClient, index_name: str, user_vector, k: int, exclude: list[str]):
+def search(qdrant: QdrantClient, index_name: str, user_vector, k: int, exclude: list[str],
+           category: str | None = None):
     """Approximate nearest neighbours: the k videos whose tower vector has the
-    biggest dot product with the user's vector."""
-    query_filter = None
+    biggest dot product with the user's vector. Optionally only within one category."""
+    must = []
+    must_not = []
+    if category is not None:
+        must.append(FieldCondition(key="category", match=MatchValue(value=category)))
     if exclude:
-        query_filter = Filter(must_not=[
-            FieldCondition(key="video_id", match=MatchAny(any=exclude)),
-        ])
+        must_not.append(FieldCondition(key="video_id", match=MatchAny(any=exclude)))
+    query_filter = None
+    if must or must_not:
+        query_filter = Filter(must=must or None, must_not=must_not or None)
     result = qdrant.query_points(
         collection_name=index_name,
         query=list(map(float, user_vector)),

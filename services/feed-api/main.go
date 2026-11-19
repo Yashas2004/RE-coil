@@ -134,8 +134,20 @@ func (s *Server) buildFeed(ctx context.Context, userID string, limit int) (FeedR
 	}
 
 	// 4: re-ranking.
-	explore := rand.Float64() < s.cfg.ExploreRate
-	items := Blend(ranked, trending, limit, s.cfg.MaxPerCategory, explore)
+	items := Blend(ranked, trending, limit, s.cfg.MaxPerCategory, false)
+
+	// Exploration: swap the last slot for the user's best guess in a category
+	// this feed isn't showing. If the model-server can't help, fall back to
+	// exploring with a trending video instead.
+	if rand.Float64() < s.cfg.ExploreRate && len(items) > 0 {
+		avoid := FeedCategories(items)
+		picked, err := s.model.Explore(ctx, userID, avoid, seen)
+		if err == nil {
+			items[len(items)-1] = picked
+		} else {
+			items = Blend(ranked, trending, limit, s.cfg.MaxPerCategory, true)
+		}
+	}
 
 	return FeedResponse{UserID: userID, ModelVersion: candidates.ModelVersion, Items: items}, nil
 }

@@ -64,3 +64,16 @@ func Blend(ranked []Item, trending []Item, limit int, maxPerCategory int, explor
 
 	return feed
 }
+
+// FeedCategories lists the distinct categories already in a feed.
+func FeedCategories(items []Item) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, item := range items {
+		if item.Category != "" && !seen[item.Category] {
+			seen[item.Category] = true
+			result = append(result, item.Category)
+		}
+	}
+	return result
+}

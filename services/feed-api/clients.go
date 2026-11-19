@@ -76,6 +76,25 @@ func (m *ModelClient) Score(ctx context.Context, userID string, videoIDs []strin
 	return out, err
 }
 
+type ExploreResponse struct {
+	ModelVersion string `json:"model_version"`
+	Item         struct {
+		VideoID  string  `json:"video_id"`
+		Category string  `json:"category"`
+		Score    float64 `json:"score"`
+	} `json:"item"`
+}
+
+// Explore asks for the user's best video in a category the feed isn't showing.
+func (m *ModelClient) Explore(ctx context.Context, userID string, avoid []string, exclude []string) (Item, error) {
+	var out ExploreResponse
+	body := map[string]any{"user_id": userID, "avoid_categories": avoid, "exclude": exclude}
+	if err := m.post(ctx, "/explore", body, &out); err != nil {
+		return Item{}, err
+	}
+	return Item{VideoID: out.Item.VideoID, Category: out.Item.Category, Source: "explore"}, nil
+}
+
 // ---------- Redis (written by the feature service) ----------
 
 type Store struct {

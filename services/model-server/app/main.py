@@ -15,6 +15,7 @@ Zero downtime, no request ever sees a half-loaded model. This is a "hot swap".
 """
 
 import logging
+import random
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -54,11 +55,12 @@ COLD_START = Counter("recoil_cold_start_requests_total", "Candidate requests for
 
 class Live:
     """What's currently being served. Replaced as a whole, never edited in place."""
-    def __init__(self, bundle, index_name, auc, num_items):
+    def __init__(self, bundle, index_name, auc, num_items, categories):
         self.bundle = bundle
         self.index_name = index_name
         self.auc = auc
         self.num_items = num_items
+        self.categories = categories
 
 
 current: Live | None = None
@@ -86,7 +88,8 @@ def refresh():
     index_name = write_tower_index(qdrant, bundle.version, ids, video_ids, categories, bundle.item_matrix)
 
     previous = current
-    current = Live(bundle, index_name, latest["auc"], len(video_ids))   # <- the swap
+    all_categories = sorted({c for c in categories if c})
+    current = Live(bundle, index_name, latest["auc"], len(video_ids), all_categories)   # <- the swap
     RELOADS.inc()
     LIVE_AUC.set(latest["auc"])
     log.info("now serving %s", bundle.version)
@@ -127,6 +130,12 @@ def require_model() -> Live:
 class CandidatesIn(BaseModel):
     user_id: str
     k: int = 200
+    exclude: list[str] = []
+
+
+class ExploreIn(BaseModel):
+    user_id: str
+    avoid_categories: list[str] = []
     exclude: list[str] = []
 
 
@@ -171,6 +180,30 @@ def candidates(body: CandidatesIn):
         "known_user": live.bundle.is_known(body.user_id),
         "items": items,
     }
+
+
+@app.post("/explore")
+@REQUEST_SECONDS.labels(endpoint="explore").time()
+def explore(body: ExploreIn):
+    """Targeted exploration: the user's best-guess video from a category their
+    feed is NOT already showing.
+
+    Plain retrieval only returns categories the model already believes in, so a
+    taste it hasn't noticed yet (music, for a user it has filed as "comedy")
+    never gets shown, never gets watched, and never gets learned. This picks a
+    random OTHER category and asks: "of THOSE videos, which one would this user
+    most likely enjoy?" If they watch it, the next model learns the new taste.
+    """
+    live = require_model()
+    options = [c for c in live.categories if c not in body.avoid_categories]
+    if not options:
+        raise HTTPException(status_code=404, detail="no other categories to explore")
+    category = random.choice(options)
+    user_vector = live.bundle.user_vector(body.user_id)
+    items = search(qdrant, live.index_name, user_vector, 1, body.exclude, category=category)
+    if not items:
+        raise HTTPException(status_code=404, detail=f"nothing unseen in {category}")
+    return {"model_version": live.bundle.version, "item": items[0]}
 
 
 @app.post("/score")

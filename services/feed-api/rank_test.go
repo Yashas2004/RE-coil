@@ -58,3 +58,11 @@ func TestBlendNeverDuplicates(t *testing.T) {
 		t.Errorf("duplicates should be dropped, got %d items", len(feed))
 	}
 }
+
+func TestFeedCategories(t *testing.T) {
+	feed := []Item{item("a", "comedy", 0.9), item("b", "comedy", 0.8), item("c", "music", 0.7), {VideoID: "d"}}
+	got := FeedCategories(feed)
+	if len(got) != 2 || got[0] != "comedy" || got[1] != "music" {
+		t.Errorf("want [comedy music], got %v", got)
+	}
+}
